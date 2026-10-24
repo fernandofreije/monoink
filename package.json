@@ -1,6 +1,6 @@
 {
   "name": "monoink",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Driver for the JSAUX E-Ink faceplate: clock, weather, game and more on a 5.83\" e-paper display.",
   "type": "module",
   "scripts": {
