@@ -1,5 +1,34 @@
 # monoink
 
+> [!NOTE]
+> **This is a personal fork of [v1k0d3n/monoink](https://github.com/v1k0d3n/monoink)
+> by Brandon B. Jozsa.** All credit for monoink goes to the original
+> project; this fork only adds a few changes for my own use, and is not an
+> official release or a replacement for it. The rest of this README is the
+> upstream text: "I" there means the original author, and its links (issues,
+> releases, the install URL) point to the upstream project. To use the
+> original, install it from upstream.
+>
+> **What this fork changes:**
+>
+> - **Show game while playing works in every mode.** Upstream only switches
+>   to the game screen when rotating. Here a running game also takes over a
+>   pinned (**Always …**) screen, which comes back when the game exits. The
+>   toggle is shown in every mode.
+> - **"Now playing" goes back to "Last played" after a session.** The game
+>   screen and dashboard redraw as soon as a game starts or exits, instead
+>   of showing "Now playing" for up to five more minutes.
+> - **Sleep & shutdown screens.** A new panel section chooses, separately
+>   for suspend and for shutdown, what stays on the display: the last screen
+>   as it was (upstream behavior, the default), the last played game, an
+>   image of your choice, or the Steam logo. monoink briefly delays sleep and
+>   shutdown through systemd-logind (5 seconds at most by default) so the
+>   picture reaches the display first, and goes back to normal on wake.
+>
+> To install the fork, build it with `./package.sh` (see
+> [For developers](#for-developers)) and use **Install Plugin from ZIP
+> File** in Decky's Developer tab with `out/monoink.zip`.
+
 **An open-source, privacy-first Decky plugin for the JSAUX E-Ink faceplate
 on SteamOS.** Show the time, weather, what you're playing, system stats and
 your own photos on the 5.83" e-paper display, configured entirely from
@@ -55,7 +84,9 @@ before, run their uninstaller first.
   temperatures), the game you're playing or last played with its cover art,
   a photo frame, and a combined dashboard.
 - **Rotate or pin** screens, and switch to the game automatically while
-  you play.
+  you play, in either mode.
+- **Sleep & shutdown screens:** keep the last screen, or show your last
+  played game, your own image or the Steam logo while the device is off.
 - **Custom cards:** your own scripts can put status information on the
   display (build status, smart-home sensors, anything) once you approve
   them. See **[docs/providers.md](docs/providers.md)**.
@@ -124,11 +155,13 @@ Everything monoink reads or contacts is below. **[docs/privacy.md](docs/privacy.
 | Source | When |
 | --- | --- |
 | BlueZ (the system Bluetooth service) | always: finding and talking to the display |
+| systemd-logind (the system login service) | always: noticing sleep, wake and shutdown, to show the screen chosen for them |
 | `/proc`, `/sys` | performance screen: CPU, memory, temperatures, GPU load |
 | `/proc/bus/input/devices` (device names and types only, never serial numbers) | game screen: whether a game controller is connected |
 | Command lines of running programs | game screen: finding the game Steam launched (only its app number and start time are kept) |
 | Steam's local files (`steamapps/*.acf`, `userdata/*/config/localconfig.vdf`, `appcache/librarycache`) | game screen: name, playtime, cached cover art |
 | Your region setting (`~/.config/plasma-localerc`, `LANG`/`LC_TIME`, `/etc/locale.conf`) | calendar: first day of the week, when set to Automatic |
+| The image you choose for suspend or shutdown | only when you choose one |
 | The photo folder you choose | photo frame |
 | `api.open-meteo.com`, `geocoding-api.open-meteo.com` | only after you set a weather location |
 | `cdn.akamai.steamstatic.com` | only if you enable "Download missing cover art" |
