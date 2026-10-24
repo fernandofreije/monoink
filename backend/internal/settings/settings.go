@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 )
 
@@ -37,6 +38,13 @@ type Settings struct {
 	AllowSteamCDN    bool   `json:"allow_steam_cdn"`    // fetch missing cover art from Steam's CDN
 	GameWhilePlaying bool   `json:"game_while_playing"` // switch to the game screen while one runs
 	GameLayout       string `json:"game_layout"`        // "cover" (default) or "timer"
+
+	// Suspend and shutdown: what stays on the display while the system is
+	// off. One of SleepScreens; "" leaves the last screen as it was.
+	SuspendScreen  string `json:"suspend_screen"`
+	SuspendImage   string `json:"suspend_image"` // for "image"
+	ShutdownScreen string `json:"shutdown_screen"`
+	ShutdownImage  string `json:"shutdown_image"` // for "image"
 
 	// Photo frame
 	PhotoDir     string `json:"photo_dir"`
@@ -74,6 +82,9 @@ type WebUI struct {
 
 // AllScreens lists every screen ID in default rotation order.
 var AllScreens = []string{"clock", "weather", "performance", "game", "calendar", "photo", "card", "dashboard"}
+
+// SleepScreens lists the choices for SuspendScreen and ShutdownScreen.
+var SleepScreens = []string{"", "last_played", "image", "steam_logo"}
 
 // Defaults returns a fresh configuration.
 func Defaults() Settings {
@@ -117,6 +128,12 @@ func (s *Settings) normalize() {
 		s.WeekStart = "auto"
 	}
 	s.WeekStartsSun = false
+	if !slices.Contains(SleepScreens, s.SuspendScreen) {
+		s.SuspendScreen = ""
+	}
+	if !slices.Contains(SleepScreens, s.ShutdownScreen) {
+		s.ShutdownScreen = ""
+	}
 	if s.WebUI.Port <= 0 || s.WebUI.Port > 65535 {
 		s.WebUI.Port = d.WebUI.Port
 	}

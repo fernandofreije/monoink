@@ -16,6 +16,10 @@ export interface Settings {
   allow_steam_cdn: boolean;
   game_while_playing: boolean;
   game_layout: "cover" | "timer";
+  suspend_screen: SleepScreen;
+  suspend_image: string;
+  shutdown_screen: SleepScreen;
+  shutdown_image: string;
   photo_dir: string;
   photo_minutes: number;
   photo_fill: boolean;
@@ -23,6 +27,9 @@ export interface Settings {
   cards_preempt: boolean;
   web_ui: { enabled: boolean; port: number };
 }
+
+// What stays on the display while the system sleeps or is off; "" leaves it as it was.
+export type SleepScreen = "" | "last_played" | "image" | "steam_logo";
 
 export type ConnState = "off" | "searching" | "connecting" | "connected" | "standby" | "backoff";
 

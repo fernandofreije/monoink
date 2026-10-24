@@ -27,6 +27,7 @@ import (
 
 	_ "golang.org/x/image/webp"
 
+	"github.com/v1k0d3n/monoink/backend/internal/assets"
 	"github.com/v1k0d3n/monoink/backend/internal/conn"
 	"github.com/v1k0d3n/monoink/backend/internal/locale"
 	"github.com/v1k0d3n/monoink/backend/internal/render"
@@ -55,6 +56,7 @@ type Engine struct {
 	wxAt        time.Time
 	game        *steam.Game
 	gameAt      time.Time
+	shownGame   string // gameState of the game on the panel
 	art         map[int]image.Image
 	cards       map[string]*screens.Card
 	pending     map[string]*screens.Card
@@ -69,6 +71,7 @@ type Engine struct {
 	lastFrame   []byte
 	force       bool
 	sending     bool
+	asleep      bool // the suspend/shutdown screen is up; see Sleep
 
 	kick chan struct{}
 }
@@ -278,21 +281,23 @@ func (e *Engine) firstWeekday(s settings.Settings) time.Weekday {
 	return locale.FirstWeekday(e.AutoWeekStart().Region)
 }
 
-// activeScreen picks the screen for now. Precedence: a pinned screen
-// (the user's explicit choice) > "Next screen" override > the game while
-// one is running > a fresh provider card > the rotation.
+// activeScreen picks the screen for now. Precedence: "Next screen"
+// override (rotation only) > the game while one is running > a pinned
+// screen > a fresh provider card > the rotation. The game beats a pin so
+// "Show game while playing" works in every mode; the pin returns when the
+// game exits.
 func (e *Engine) activeScreen(now time.Time, s settings.Settings, playing bool) string {
-	if s.PinnedScreen != "" {
-		return s.PinnedScreen
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.override != "" && now.Before(e.overrideTo) {
+	if s.PinnedScreen == "" && e.override != "" && now.Before(e.overrideTo) {
 		return e.override
 	}
 	e.override = ""
 	if playing && s.GameWhilePlaying {
 		return "game"
+	}
+	if s.PinnedScreen != "" {
+		return s.PinnedScreen
 	}
 	if s.CardsPreempt {
 		if c := e.freshCardLocked(now); c != nil && now.Sub(c.Updated) < 2*time.Minute {
@@ -327,16 +332,14 @@ func (e *Engine) step(ctx context.Context) {
 		return
 	}
 	now := time.Now()
-	gameRunning := false
-	if g := e.currentGame(now); g != nil && g.Running { // cached; cheap
-		gameRunning = true
-	}
-	playing := gameRunning && s.GameWhilePlaying && s.PinnedScreen == ""
+	g := e.currentGame(now) // cached; cheap
+	gameRunning := g != nil && g.Running
+	playing := gameRunning && s.GameWhilePlaying
 	id := e.activeScreen(now, s, playing)
 	scr := screens.All[id]
 
 	e.mu.Lock()
-	if e.sending {
+	if e.sending || e.asleep {
 		e.mu.Unlock()
 		return
 	}
@@ -346,6 +349,12 @@ func (e *Engine) step(ctx context.Context) {
 		cadence = time.Minute // keep the session time current
 	}
 	need := e.force || id != e.current || due(cadence, e.renderAt, now) || photoDue
+	// These screens say "Now playing" or "Last played": redraw as soon as
+	// a game starts or exits instead of waiting for the next cadence.
+	game := gameState(g)
+	if (id == "game" || id == "dashboard") && game != e.shownGame {
+		need = true
+	}
 	if id == "game" && e.Sys != nil {
 		// Redraw as soon as a controller connects or disconnects.
 		if n := e.Sys.Controllers(); n != e.controllers {
@@ -375,7 +384,11 @@ func (e *Engine) step(ctx context.Context) {
 	frame := render.Pack(draw(scr, data, s))
 
 	e.mu.Lock()
-	e.current, e.renderAt, e.force = id, now, false
+	if e.asleep { // Sleep began while this frame was rendering
+		e.mu.Unlock()
+		return
+	}
+	e.current, e.renderAt, e.force, e.shownGame = id, now, false, game
 	if bytes.Equal(frame, e.lastFrame) {
 		e.mu.Unlock()
 		return
@@ -433,6 +446,95 @@ func (e *Engine) Preview(ctx context.Context, id string) (*image.Gray, error) {
 	return img, nil
 }
 
+// ---- suspend and shutdown --------------------------------------------------
+
+// Sleep shows the screen chosen for a suspend (or shutdown) and returns
+// once it is on the display, ctx ends, or there is nothing to show. The
+// normal screens don't replace it until Wake.
+func (e *Engine) Sleep(ctx context.Context, shutdown bool) {
+	s := e.Store.Get()
+	choice, path := s.SuspendScreen, s.SuspendImage
+	if shutdown {
+		choice, path = s.ShutdownScreen, s.ShutdownImage
+	}
+	if !s.Enabled || choice == "" {
+		return
+	}
+	e.mu.Lock()
+	e.asleep = true
+	e.mu.Unlock()
+
+	frame := render.Pack(e.sleepImage(ctx, s, choice, path))
+	start := time.Now()
+	for {
+		// A frame already on its way finishes first; ours replaces it.
+		err := e.Conn.Send(ctx, frame)
+		if errors.Is(err, conn.ErrBusy) {
+			select {
+			case <-ctx.Done():
+				err = ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+				continue
+			}
+		}
+		if err != nil {
+			e.Log.Warn("sleep screen not delivered", "screen", choice, "err", err)
+			return
+		}
+		e.mu.Lock()
+		e.lastFrame, e.current = frame, ""
+		e.mu.Unlock()
+		e.Log.Info("sleep screen delivered", "screen", choice, "took", time.Since(start).Round(time.Millisecond))
+		return
+	}
+}
+
+// Wake resumes normal updates after a suspend.
+func (e *Engine) Wake() {
+	e.mu.Lock()
+	e.asleep, e.force, e.gameAt = false, true, time.Time{}
+	e.mu.Unlock()
+	e.Kick()
+}
+
+// sleepImage renders a SleepScreens choice. A custom image that can't be
+// read falls back to the Steam logo.
+func (e *Engine) sleepImage(ctx context.Context, s settings.Settings, choice, path string) *image.Gray {
+	switch choice {
+	case "last_played":
+		d := e.snapshot(ctx, time.Now(), s, "game")
+		d.Controllers = 0
+		if d.Game != nil && d.Game.Running {
+			// Still running as the Deck sleeps: show it as last played.
+			g := *d.Game
+			g.Running, g.Started, g.LastPlayed = false, time.Time{}, d.Now
+			d.Game = &g
+		}
+		return draw(screens.All["game"], d, s)
+	case "image":
+		img, err := loadImage(path)
+		if err == nil {
+			return render.Dither(img) // like photos, unchanged by dark mode
+		}
+		e.Log.Warn("sleep image unavailable; showing the Steam logo", "path", path, "err", err)
+	}
+	return steamLogo(s.DarkMode)
+}
+
+func steamLogo(dark bool) *image.Gray {
+	logo, _, err := image.Decode(bytes.NewReader(assets.SteamLogo))
+	if err != nil {
+		logo = image.NewGray(image.Rectangle{}) // blank
+	}
+	img := render.Fit(logo)
+	if dark {
+		for i, v := range img.Pix {
+			img.Pix[i] = 255 - v
+		}
+	}
+	return img
+}
+
 // ---- data ------------------------------------------------------------------
 
 func (e *Engine) snapshot(ctx context.Context, now time.Time, s settings.Settings, id string) *screens.Data {
@@ -469,7 +571,12 @@ func (e *Engine) currentGame(now time.Time) *steam.Game {
 		return nil
 	}
 	e.mu.Lock()
-	if now.Sub(e.gameAt) < 30*time.Second {
+	// Look again sooner while a game runs, so its exit shows promptly.
+	ttl := 30 * time.Second
+	if e.game != nil && e.game.Running {
+		ttl = 10 * time.Second
+	}
+	if now.Sub(e.gameAt) < ttl {
 		g := e.game
 		e.mu.Unlock()
 		return g
@@ -483,6 +590,14 @@ func (e *Engine) currentGame(now time.Time) *steam.Game {
 	e.game, e.gameAt = g, now
 	e.mu.Unlock()
 	return g
+}
+
+// gameState identifies what the game screens show about g.
+func gameState(g *steam.Game) string {
+	if g == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d %t", g.AppID, g.Running)
 }
 
 func (e *Engine) gameArt(ctx context.Context, g *steam.Game, allowCDN bool) image.Image {

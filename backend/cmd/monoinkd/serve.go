@@ -11,6 +11,7 @@ import (
 	"github.com/v1k0d3n/monoink/backend/internal/conn"
 	"github.com/v1k0d3n/monoink/backend/internal/engine"
 	"github.com/v1k0d3n/monoink/backend/internal/paths"
+	"github.com/v1k0d3n/monoink/backend/internal/power"
 	"github.com/v1k0d3n/monoink/backend/internal/settings"
 	"github.com/v1k0d3n/monoink/backend/internal/steam"
 	"github.com/v1k0d3n/monoink/backend/internal/sysinfo"
@@ -58,6 +59,20 @@ func cmdServe(ctx context.Context, args []string) error {
 	go func() { errc <- api.ListenUnix(ctx, *providers, srv.Providers(), log) }()
 	engineDone := make(chan struct{})
 	go func() { eng.Run(ctx); close(engineDone) }()
+	go func() {
+		err := power.Watch(ctx, log.With("component", "power"), func(ev power.Event) {
+			if ev == power.Resume {
+				eng.Wake()
+				return
+			}
+			sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			eng.Sleep(sctx, ev == power.Shutdown)
+		})
+		if err != nil {
+			log.Warn("suspend and shutdown screens unavailable", "err", err)
+		}
+	}()
 
 	log.Info("monoinkd started", "version", version, "settings", *settingsDir)
 	select {

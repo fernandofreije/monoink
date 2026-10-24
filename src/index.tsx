@@ -19,7 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 import { MdTabletAndroid } from "react-icons/md";
 
 import * as api from "./api";
-import type { Candidate, Place, Provider, Settings, Status } from "./api";
+import type { Candidate, Place, Provider, Settings, SleepScreen, Status } from "./api";
 
 const ROTATE_STEPS = [1, 2, 5, 10, 15, 30, 60];
 const PHOTO_STEPS = [1, 5, 10, 15, 30, 60];
@@ -142,6 +142,57 @@ function LocationModal({ closeModal, onPick }: { closeModal?: () => void; onPick
         <DialogButton onClick={() => pick(null)}>Turn weather off</DialogButton>
       </Focusable>
     </ModalRoot>
+  );
+}
+
+// ---- sleep & shutdown -------------------------------------------------------
+
+const SLEEP_OPTIONS: { data: SleepScreen; label: string }[] = [
+  { data: "", label: "Leave as it is" },
+  { data: "last_played", label: "Last played game" },
+  { data: "image", label: "An image" },
+  { data: "steam_logo", label: "Steam logo" },
+];
+
+function SleepScreenRows(props: {
+  label: string;
+  screen: SleepScreen;
+  image: string;
+  onScreen: (v: SleepScreen) => void;
+  onImage: (path: string) => void;
+}) {
+  const chooseImage = async () => {
+    try {
+      const start = props.image ? props.image.replace(/\/[^/]*$/, "") : `${(await api.info()).home}/Pictures`;
+      const res = await openFilePicker(FileSelectionType.FILE, start);
+      props.onImage(res.realpath || res.path);
+    } catch {
+      // picker cancelled
+    }
+  };
+
+  return (
+    <>
+      <PanelSectionRow>
+        <DropdownItem
+          label={props.label}
+          rgOptions={SLEEP_OPTIONS}
+          selectedOption={props.screen}
+          onChange={(o) => props.onScreen(o.data)}
+        />
+      </PanelSectionRow>
+      {props.screen === "image" && (
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            description={props.image ? props.image.split("/").pop() : "None chosen — the Steam logo is shown."}
+            onClick={chooseImage}
+          >
+            Choose image
+          </ButtonItem>
+        </PanelSectionRow>
+      )}
+    </>
   );
 }
 
@@ -333,28 +384,30 @@ function Content() {
             onChange={(o) => patch({ pinned_screen: o.data })}
           />
         </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Show game while playing"
+            description={`Switch to the Game screen while a Steam game is running, then back to ${
+              s.pinned_screen ? titles[s.pinned_screen] : "the rotation"
+            } when it exits.`}
+            checked={s.game_while_playing}
+            onChange={(v) => patch({ game_while_playing: v })}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <DropdownItem
+            label="Game screen layout"
+            description="Timer shows a large clock of how long you've been playing."
+            rgOptions={[
+              { data: "cover", label: "Cover art" },
+              { data: "timer", label: "Session timer" },
+            ]}
+            selectedOption={s.game_layout}
+            onChange={(o) => patch({ game_layout: o.data })}
+          />
+        </PanelSectionRow>
         {!s.pinned_screen && (
           <>
-            <PanelSectionRow>
-              <ToggleField
-                label="Show game while playing"
-                description="Switch to the Game screen while a Steam game is running."
-                checked={s.game_while_playing}
-                onChange={(v) => patch({ game_while_playing: v })}
-              />
-            </PanelSectionRow>
-            <PanelSectionRow>
-              <DropdownItem
-                label="Game screen layout"
-                description="Timer shows a large clock of how long you've been playing."
-                rgOptions={[
-                  { data: "cover", label: "Cover art" },
-                  { data: "timer", label: "Session timer" },
-                ]}
-                selectedOption={s.game_layout}
-                onChange={(o) => patch({ game_layout: o.data })}
-              />
-            </PanelSectionRow>
             <PanelSectionRow>
               <SliderField
                 label="Time per screen"
@@ -512,6 +565,28 @@ function Content() {
             onChange={(v) => patch({ cards_preempt: v })}
           />
         </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection title="Sleep & shutdown">
+        <PanelSectionRow>
+          <div style={{ fontSize: "12px", opacity: 0.8 }}>
+            What stays on the display while the system is asleep or switched off.
+          </div>
+        </PanelSectionRow>
+        <SleepScreenRows
+          label="When suspended"
+          screen={s.suspend_screen}
+          image={s.suspend_image}
+          onScreen={(v) => patch({ suspend_screen: v })}
+          onImage={(v) => patch({ suspend_image: v })}
+        />
+        <SleepScreenRows
+          label="When shut down"
+          screen={s.shutdown_screen}
+          image={s.shutdown_image}
+          onScreen={(v) => patch({ shutdown_screen: v })}
+          onImage={(v) => patch({ shutdown_image: v })}
+        />
       </PanelSection>
 
       <PanelSection title="Advanced">

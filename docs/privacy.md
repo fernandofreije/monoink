@@ -11,6 +11,7 @@ without reading the code.
 | What | Why | Details |
 | --- | --- | --- |
 | BlueZ, the system Bluetooth service (D-Bus) | Finding and talking to the display | Standard access any user has. No pairing, no admin rights. |
+| systemd-logind (D-Bus) | Sleep & shutdown screens | Listens for the system going to sleep, waking and shutting down, and briefly delays sleep and shutdown (at most logind's limit, 5 seconds by default) so the chosen picture reaches the display first. Standard access any user has. |
 | `/proc/stat`, `/proc/meminfo`, `/proc/uptime` | Performance screen | CPU, memory and uptime. |
 | `/sys/class/hwmon`, `/sys/class/drm/*/device/gpu_busy_percent`, `/sys/class/power_supply` | Performance screen | Temperatures, GPU load, and the system battery if there is one (peripheral batteries such as mice are ignored). |
 | `/proc/bus/input/devices` | Game screen controller icon | Device names, types and system paths only. **Serial numbers are never read**, and input devices are never opened (see below). |
@@ -18,6 +19,7 @@ without reading the code.
 | Start time of that one process (`/proc/<pid>/stat`) and the boot time (`/proc/stat`) | Game screen and dashboard: session time | Read only for the process Steam launched the game with, to work out when the session began. Not stored. |
 | Steam's local files: `steamapps/libraryfolders.vdf`, `steamapps/appmanifest_*.acf`, `userdata/*/config/localconfig.vdf`, `appcache/librarycache/` | Game screen | Game names, total playtime and last-played time, and cover art Steam has already cached. `localconfig.vdf` contains other Steam settings too; only the per-game playtime and last-played values are used. |
 | Your region setting: `~/.config/plasma-localerc` (KDE's Region & Language), the `LANG`/`LC_TIME` environment variables, and `/etc/locale.conf` | Calendar: which day the week starts on, when set to Automatic | Only the region code (for example `US`) is used. Never looked up online. |
+| The image you choose for suspend or shutdown | Sleep & shutdown screens | That one file. Only read, never changed. |
 | The photo folder you choose | Photo frame | Image files in that one folder (not subfolders). Your files are only read, never changed. |
 
 ## What monoink stores
