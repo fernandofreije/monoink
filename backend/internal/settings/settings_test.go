@@ -76,6 +76,17 @@ func TestEmptyScreensEncodeAsArray(t *testing.T) {
 	}
 }
 
+func TestSleepScreensNormalized(t *testing.T) {
+	st, _ := Open(t.TempDir())
+	if s := st.Get(); s.SuspendScreen != "" || s.ShutdownScreen != "" {
+		t.Errorf("sleep screens should default to leaving the display alone: %+v", s)
+	}
+	s, _ := st.Update(func(s *Settings) { s.SuspendScreen, s.ShutdownScreen = "image", "fireworks" })
+	if s.SuspendScreen != "image" || s.ShutdownScreen != "" {
+		t.Errorf("got suspend %q, shutdown %q", s.SuspendScreen, s.ShutdownScreen)
+	}
+}
+
 func TestGameLayoutNormalized(t *testing.T) {
 	st, _ := Open(t.TempDir())
 	if got := st.Get().GameLayout; got != "cover" {

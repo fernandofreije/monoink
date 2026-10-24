@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"image"
 	"image/color"
@@ -10,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/v1k0d3n/monoink/backend/internal/proto"
 	"github.com/v1k0d3n/monoink/backend/internal/settings"
+	"github.com/v1k0d3n/monoink/backend/internal/steam"
 )
 
 func newTest(t *testing.T) *Engine {
@@ -57,9 +60,17 @@ func TestScreenPrecedence(t *testing.T) {
 		t.Errorf("Next override should beat the game: %s", got)
 	}
 	s.PinnedScreen = "dashboard"
-	if got := e.activeScreen(t0, s, true); got != "dashboard" {
-		t.Errorf("pin must beat everything: %s", got)
+	if got := e.activeScreen(t0, s, false); got != "dashboard" {
+		t.Errorf("pin must beat the override and rotation: %s", got)
 	}
+	if got := e.activeScreen(t0, s, true); got != "game" {
+		t.Errorf("running game should take over a pin too: %s", got)
+	}
+	s.GameWhilePlaying = false
+	if got := e.activeScreen(t0, s, true); got != "dashboard" {
+		t.Errorf("game took over with Show game while playing off: %s", got)
+	}
+	s.GameWhilePlaying = true
 	if got := e.activeScreen(t0.Add(31*time.Second), settings.Settings{Screens: s.Screens, RotateMinutes: 1}, false); got != "clock" {
 		t.Errorf("override not expired: %s", got)
 	}
@@ -133,5 +144,66 @@ func TestPhotosAndLoad(t *testing.T) {
 	}
 	if _, err := loadImage(filepath.Join(dir, "notes.txt")); err == nil {
 		t.Fatal("non-image decoded")
+	}
+}
+
+func TestGameStateTracksStartAndExit(t *testing.T) {
+	running := &steam.Game{AppID: 620, Running: true}
+	exited := &steam.Game{AppID: 620}
+	if gameState(running) == gameState(exited) {
+		t.Error("a game exiting must change what the game screens show")
+	}
+	if gameState(nil) == gameState(exited) {
+		t.Error("the first game must change what the game screens show")
+	}
+}
+
+func TestSleepImage(t *testing.T) {
+	e := newTest(t)
+	s := e.Store.Get()
+	black := func(img *image.Gray) (n int) {
+		if img.Bounds() != image.Rect(0, 0, proto.Width, proto.Height) {
+			t.Fatalf("wrong size %v", img.Bounds())
+		}
+		for _, v := range img.Pix {
+			if v < 128 {
+				n++
+			}
+		}
+		return n
+	}
+
+	logo := black(e.sleepImage(context.Background(), s, "steam_logo", ""))
+	if logo < 1000 || logo > len(e.sleepImage(context.Background(), s, "steam_logo", "").Pix)/2 {
+		t.Fatalf("Steam logo looks wrong: %d black pixels", logo)
+	}
+	if got := black(e.sleepImage(context.Background(), s, "image", "/nonexistent.png")); got != logo {
+		t.Error("an unreadable image should fall back to the Steam logo")
+	}
+	s.DarkMode = true
+	if got := black(e.sleepImage(context.Background(), s, "steam_logo", "")); got != proto.Width*proto.Height-logo {
+		t.Error("dark mode should invert the logo")
+	}
+
+	path := filepath.Join(t.TempDir(), "sleep.png")
+	solid := image.NewGray(image.Rect(0, 0, proto.Width, proto.Height)) // all black
+	f, _ := os.Create(path)
+	png.Encode(f, solid)
+	f.Close()
+	if got := black(e.sleepImage(context.Background(), s, "image", path)); got != proto.Width*proto.Height {
+		t.Errorf("custom image not shown (or inverted): %d black pixels", got)
+	}
+}
+
+func TestSleepWithNothingChosenLeavesUpdatesRunning(t *testing.T) {
+	e := newTest(t)
+	e.Sleep(context.Background(), false) // default: leave the display as it is
+	if e.asleep {
+		t.Fatal("updates paused although no suspend screen is chosen")
+	}
+	e.asleep = true
+	e.Wake()
+	if e.asleep || !e.force {
+		t.Fatal("Wake should resume updates and redraw")
 	}
 }

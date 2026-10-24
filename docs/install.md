@@ -90,10 +90,14 @@ Everything is in the plugin panel:
   screen** and **Redraw now**.
 - **Screens**: choose **Rotate** or pin one screen with **Always …**, and
   pick which screens rotate. **Show game while playing** switches to the
-  game screen while a Steam game is running.
+  game screen while a Steam game is running, in either mode, and goes back
+  to the rotation or your pinned screen when the game exits.
 - **Clock & weather**: 12/24-hour clock, first day of the week, and your
   weather location (search by city name).
 - **Photo frame**: choose a folder of pictures (PNG, JPEG, GIF or WebP).
+- **Sleep & shutdown**: what stays on the display while the system is
+  suspended or off: the last screen as it was, your last played game, an
+  image of your choice, or the Steam logo.
 - **Providers**: approve or remove programs that send status cards. See
   [providers.md](providers.md).
 
@@ -104,7 +108,7 @@ Everything is in the plugin panel:
   normal, and it also stops old images from leaving faint "ghosts".
 - **How often it changes:** Clock, Dashboard and Performance update every
   minute. Weather updates about every 30 minutes, the game screen every few
-  minutes (and immediately when a game starts), the calendar hourly, and
+  minutes (and immediately when a game starts or exits), the calendar hourly, and
   photos on the interval you choose. Nothing is sent if the picture hasn't
   changed.
 - **Each update takes about 3 seconds** over Bluetooth, sometimes longer
@@ -112,7 +116,8 @@ Everything is in the plugin panel:
   while it works.
 - **The picture stays when it's off.** E-ink needs no power to hold an
   image, so the last screen remains visible if the device sleeps or the
-  faceplate is switched off.
+  faceplate is switched off. Under **Sleep & shutdown** you can choose a
+  different picture for those times.
 - **The USB-C port on the faceplate is for power only.** Everything goes
   over Bluetooth, whether or not it's plugged in.
 
