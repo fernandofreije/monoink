@@ -22,6 +22,7 @@ native_test() {
 	echo "==> plugin checks"
 	pnpm install --frozen-lockfile >/dev/null
 	pnpm typecheck
+	pnpm test
 	python3 -c "import ast; ast.parse(open('main.py').read())" 2>/dev/null || { command -v python3 >/dev/null && { echo "main.py has a syntax error" >&2; exit 1; } || echo "(python3 not found; skipped main.py check)"; }
 }
 

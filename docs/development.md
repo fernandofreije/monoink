@@ -6,6 +6,7 @@
 | --- | --- |
 | `backend/` | `monoinkd`, a static Go program: Bluetooth (BlueZ over D-Bus), rendering, scheduling, the local API. |
 | `src/` | The Decky panel (TypeScript/React). |
+| `tests/` | Panel tests (`pnpm test`, Node's built-in runner). |
 | `main.py` | Decky's required Python entry point. Standard library only; it just supervises `monoinkd` and forwards panel requests. |
 | `Containerfile` | The build environment: Go, Node, pnpm and zip at pinned versions. |
 | `package.sh` | Tests and builds everything into `out/monoink.zip`, inside that environment. |
@@ -21,6 +22,11 @@ against them when reviewing:
   the README, and anything that reveals something about the user is opt-in.
 - The core never reads other apps' data or credentials; integrations are
   [providers](providers.md).
+- The panel never assumes a `SteamClient` method exists. It is Steam's
+  private API, changes between client releases, and Decky's typings don't
+  reflect what a given user has, so type-checking can't catch it. Register
+  through the guarded helper in `src/steamEvents.ts` and add a test with
+  the method missing.
 - `main.py` uses only the Python standard library; `monoinkd` stays
   `CGO_ENABLED=0`.
 
@@ -68,7 +74,7 @@ backend/out/monoinkd probe -test-pattern -numbers -repeat 3 -idle 3s   # must en
 
 | Workflow | When | What |
 | --- | --- | --- |
-| **CI** (`ci.yml`) | every push to `main` and every pull request | gofmt, `go vet`, Go tests with the race detector, a check that screen previews are up to date, TypeScript type-check and build, `main.py` compile check, then a full package built with `Containerfile`. The installable zip is attached to the run as an artifact (*monoink-plugin-…*) for 14 days, so changes can be tried on a device before release. |
+| **CI** (`ci.yml`) | every push to `main` and every pull request | gofmt, `go vet`, Go tests with the race detector, a check that screen previews are up to date, TypeScript type-check, panel tests and build, `main.py` compile check, then a full package built with `Containerfile`. The installable zip is attached to the run as an artifact (*monoink-plugin-…*) for 14 days, so changes can be tried on a device before release. |
 | **Release** (`release.yml`) | pushing a `v*` tag | Builds and tests with `Containerfile`, then publishes a GitHub release with `monoink-vX.Y.Z.zip`, its SHA-256, install instructions and generated notes. Tags with a suffix (`v0.2.0-beta1`) are marked pre-release; plain versions become the release that `releases/latest/download/monoink.zip` points to. |
 | **Dependabot** (`dependabot.yml`) | weekly | Opens pull requests for updated npm packages, Go modules, GitHub Actions and build images (minor and patch updates grouped). CI runs on each one, so a green check means the update builds and passes the tests. |
 

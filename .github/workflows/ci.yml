@@ -60,6 +60,7 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm build
       - name: main.py compiles
         run: python3 -c "import ast; ast.parse(open('main.py').read())"
