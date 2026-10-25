@@ -182,6 +182,38 @@ func (s *Server) Control() http.Handler {
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 
+	// Steam events the panel relays: Steam knows about them before the
+	// system does.
+	mux.HandleFunc("POST /api/steam/game", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			AppID   int  `json:"app_id"`
+			Running bool `json:"running"`
+		}
+		if err := readJSON(r, &req); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		if req.AppID <= 0 {
+			writeErr(w, 400, errors.New("app_id is required"))
+			return
+		}
+		e.GameEvent(req.AppID, req.Running)
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	})
+
+	mux.HandleFunc("POST /api/steam/{event}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.PathValue("event") {
+		case "suspend":
+			e.SuspendSoon()
+		case "resume":
+			e.Wake()
+		default:
+			writeErr(w, 404, errors.New("unknown event"))
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	})
+
 	mux.HandleFunc("POST /api/next", func(w http.ResponseWriter, r *http.Request) {
 		id, err := e.Next()
 		if err != nil {

@@ -19,6 +19,7 @@ without reading the code.
 | Start time of that one process (`/proc/<pid>/stat`) and the boot time (`/proc/stat`) | Game screen and dashboard: session time | Read only for the process Steam launched the game with, to work out when the session began. Not stored. |
 | Steam's local files: `steamapps/libraryfolders.vdf`, `steamapps/appmanifest_*.acf`, `userdata/*/config/localconfig.vdf`, `appcache/librarycache/` | Game screen | Game names, total playtime and last-played time, and cover art Steam has already cached. `localconfig.vdf` contains other Steam settings too; only the per-game playtime and last-played values are used. |
 | Your region setting: `~/.config/plasma-localerc` (KDE's Region & Language), the `LANG`/`LC_TIME` environment variables, and `/etc/locale.conf` | Calendar: which day the week starts on, when set to Automatic | Only the region code (for example `US`) is used. Never looked up online. |
+| Steam's notices in the plugin panel: a game starting or stopping (its app number), and a suspend starting or ending | Game screen and dashboard, sleep screen | The panel, which runs inside Steam, passes these to the service over its private socket, so the display reacts at once. Nothing else about the game or session is used. |
 | The image you choose for suspend or shutdown | Sleep & shutdown screens | That one file. Only read, never changed. |
 | The photo folder you choose | Photo frame | Image files in that one folder (not subfolders). Your files are only read, never changed. |
 

@@ -15,15 +15,20 @@
 >   to the game screen when rotating. Here a running game also takes over a
 >   pinned (**Always …**) screen, which comes back when the game exits. The
 >   toggle is shown in every mode.
-> - **"Now playing" goes back to "Last played" after a session.** The game
->   screen and dashboard redraw as soon as a game starts or exits, instead
->   of showing "Now playing" for up to five more minutes.
+> - **"Now playing" goes back to "Last played" after a session.** The panel
+>   passes on Steam's own notice that a game started or stopped, so the game
+>   screen and dashboard switch to "Last played" (showing the game you just
+>   closed) right away, even when the screen doesn't change, and even while
+>   the game's processes are still exiting.
 > - **Sleep & shutdown screens.** A new panel section chooses, separately
 >   for suspend and for shutdown, what stays on the display: the last screen
 >   as it was (upstream behavior, the default), the last played game, an
 >   image of your choice, or the Steam logo. monoink briefly delays sleep and
 >   shutdown through systemd-logind (5 seconds at most by default) so the
->   picture reaches the display first, and goes back to normal on wake.
+>   picture reaches the display first, and goes back to normal on wake. The
+>   suspend picture starts as soon as Steam asks to suspend, a few seconds
+>   before the system does, so it makes it over Bluetooth in time. A game
+>   still running as the device sleeps or shuts down shows as last played.
 >
 > To install the fork, build it with `./package.sh` (see
 > [For developers](#for-developers)) and use **Install Plugin from ZIP

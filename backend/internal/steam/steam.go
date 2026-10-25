@@ -267,12 +267,28 @@ func (c *Client) Current() (Game, bool) {
 	if id == 0 {
 		return Game{}, false
 	}
-	g := Game{AppID: id, Running: isRunning, Name: c.Name(id), ArtPath: c.ArtPath(id)}
+	g := c.describe(apps, id)
+	g.Running = isRunning
 	if isRunning {
 		if t, ok := c.processStart(pid); ok {
 			g.Started = t
 		}
 	}
+	return g, true
+}
+
+// App describes an installed app as not running. ok is false if it has no
+// manifest (for example a non-Steam shortcut).
+func (c *Client) App(appID int) (Game, bool) {
+	if c.Name(appID) == "" {
+		return Game{}, false
+	}
+	return c.describe(c.localConfig(), appID), true
+}
+
+// describe fills in what Steam's files say about an app.
+func (c *Client) describe(apps Node, id int) Game {
+	g := Game{AppID: id, Name: c.Name(id), ArtPath: c.ArtPath(id)}
 	if n := apps.Child(strconv.Itoa(id)); n != nil {
 		mins, _ := strconv.Atoi(n.Str("Playtime"))
 		g.Playtime = time.Duration(mins) * time.Minute
@@ -283,5 +299,5 @@ func (c *Client) Current() (Game, bool) {
 	if g.Name == "" {
 		g.Name = "App " + strconv.Itoa(id)
 	}
-	return g, true
+	return g
 }

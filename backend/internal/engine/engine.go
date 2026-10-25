@@ -57,6 +57,8 @@ type Engine struct {
 	game        *steam.Game
 	gameAt      time.Time
 	shownGame   string // gameState of the game on the panel
+	stopped     int    // app Steam last reported closed (see GameEvent)
+	stoppedAt   time.Time
 	art         map[int]image.Image
 	cards       map[string]*screens.Card
 	pending     map[string]*screens.Card
@@ -71,7 +73,10 @@ type Engine struct {
 	lastFrame   []byte
 	force       bool
 	sending     bool
-	asleep      bool // the suspend/shutdown screen is up; see Sleep
+	asleep      bool          // the suspend/shutdown screen is up; see Sleep
+	sleepKind   string        // "suspend" or "shutdown" while asleep
+	sleepDone   chan struct{} // closed once the sleep screen is sent or abandoned
+	sleepGen    int           // counts Sleeps, so a stale fallback can't end a newer one
 
 	kick chan struct{}
 }
@@ -453,15 +458,28 @@ func (e *Engine) Preview(ctx context.Context, id string) (*image.Gray, error) {
 // normal screens don't replace it until Wake.
 func (e *Engine) Sleep(ctx context.Context, shutdown bool) {
 	s := e.Store.Get()
-	choice, path := s.SuspendScreen, s.SuspendImage
+	kind, choice, path := "suspend", s.SuspendScreen, s.SuspendImage
 	if shutdown {
-		choice, path = s.ShutdownScreen, s.ShutdownImage
+		kind, choice, path = "shutdown", s.ShutdownScreen, s.ShutdownImage
 	}
 	if !s.Enabled || choice == "" {
 		return
 	}
 	e.mu.Lock()
-	e.asleep = true
+	if e.asleep && e.sleepKind == kind {
+		// Already on its way (Steam asked first): just let it finish.
+		done := e.sleepDone
+		e.mu.Unlock()
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
+		return
+	}
+	done := make(chan struct{})
+	defer close(done)
+	e.asleep, e.sleepKind, e.sleepDone = true, kind, done
+	e.sleepGen++
 	e.mu.Unlock()
 
 	frame := render.Pack(e.sleepImage(ctx, s, choice, path))
@@ -489,10 +507,34 @@ func (e *Engine) Sleep(ctx context.Context, shutdown bool) {
 	}
 }
 
+// SuspendSoon starts the suspend screen when Steam asks to suspend, a few
+// seconds before logind's PrepareForSleep, so a slow Bluetooth link still
+// makes it in time. If the system doesn't go to sleep after all, normal
+// updates resume after two minutes (timers don't run while it sleeps).
+func (e *Engine) SuspendSoon() {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		e.Sleep(ctx, false)
+		cancel()
+		e.mu.Lock()
+		gen := e.sleepGen
+		e.mu.Unlock()
+		time.AfterFunc(2*time.Minute, func() {
+			e.mu.Lock()
+			stale := e.asleep && e.sleepKind == "suspend" && e.sleepGen == gen
+			e.mu.Unlock()
+			if stale {
+				e.Log.Info("no suspend followed Steam's request; resuming updates")
+				e.Wake()
+			}
+		})
+	}()
+}
+
 // Wake resumes normal updates after a suspend.
 func (e *Engine) Wake() {
 	e.mu.Lock()
-	e.asleep, e.force, e.gameAt = false, true, time.Time{}
+	e.asleep, e.sleepKind, e.force, e.gameAt = false, "", true, time.Time{}
 	e.mu.Unlock()
 	e.Kick()
 }
@@ -587,9 +629,81 @@ func (e *Engine) currentGame(now time.Time) *steam.Game {
 		g = &cur
 	}
 	e.mu.Lock()
+	stopped, at := e.stopped, e.stoppedAt
+	e.mu.Unlock()
+	g = endedSession(g, stopped, at, e.Steam.App)
+	e.mu.Lock()
 	e.game, e.gameAt = g, now
 	e.mu.Unlock()
 	return g
+}
+
+// GameEvent records Steam reporting a game starting or stopping (relayed
+// by the panel, which runs inside Steam). Steam knows at once; the
+// processes a game leaves behind can take a while to exit, and Steam's
+// files are written later still.
+func (e *Engine) GameEvent(appID int, running bool) {
+	e.Log.Info("game event from Steam", "app", appID, "running", running)
+	if running {
+		e.mu.Lock()
+		if e.stopped == appID {
+			e.stopped = 0 // a new session of the game that stopped
+		}
+		e.mu.Unlock()
+		// The game's process may not exist yet: look a little later.
+		for _, d := range []time.Duration{2 * time.Second, 8 * time.Second} {
+			time.AfterFunc(d, e.refreshGame)
+		}
+		return
+	}
+	e.mu.Lock()
+	// Only for the game we know about, never, say, a compatibility tool.
+	known := e.game != nil && e.game.AppID == appID
+	if known {
+		e.stopped, e.stoppedAt = appID, time.Now()
+	}
+	e.mu.Unlock()
+	if known {
+		e.refreshGame()
+	}
+}
+
+// refreshGame looks for the current game again on the next step.
+func (e *Engine) refreshGame() {
+	e.mu.Lock()
+	e.gameAt = time.Time{}
+	e.mu.Unlock()
+	e.Kick()
+}
+
+// endedSession corrects g with Steam's report that app stopped closed at
+// at: that session counts as over even while its processes are still
+// exiting, and it is the last played game until Steam's files mention a
+// later one. lookup describes an installed app.
+func endedSession(g *steam.Game, stopped int, at time.Time, lookup func(int) (steam.Game, bool)) *steam.Game {
+	if stopped == 0 {
+		return g
+	}
+	if g != nil && g.Running && (g.AppID != stopped || g.Started.After(at)) {
+		return g // a game is running (a new session started after the exit)
+	}
+	var ended steam.Game
+	switch {
+	case g != nil && g.AppID == stopped:
+		ended = *g
+	case g != nil && !g.LastPlayed.Before(at):
+		return g // Steam's files already know a later session
+	default:
+		var ok bool
+		if ended, ok = lookup(stopped); !ok {
+			return g // not an installed Steam game
+		}
+	}
+	ended.Running, ended.Started = false, time.Time{}
+	if ended.LastPlayed.Before(at) {
+		ended.LastPlayed = at
+	}
+	return &ended
 }
 
 // gameState identifies what the game screens show about g.

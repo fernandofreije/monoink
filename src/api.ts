@@ -102,6 +102,9 @@ export const scan = () => api<Candidate[]>("POST", "/api/scan");
 export const reconnect = () => api<Connection>("POST", "/api/reconnect");
 export const refresh = () => api<{ ok: boolean }>("POST", "/api/refresh");
 export const next = () => api<{ screen: string }>("POST", "/api/next");
+export const steamGame = (appId: number, running: boolean) =>
+  api<{ ok: boolean }>("POST", "/api/steam/game", { app_id: appId, running });
+export const steamPower = (event: "suspend" | "resume") => api<{ ok: boolean }>("POST", `/api/steam/${event}`);
 export const searchPlaces = (query: string) => api<Place[]>("POST", "/api/weather/search", { query });
 export const providers = () => api<Provider[]>("GET", "/api/providers");
 export const setProvider = (id: string, approve: boolean) =>
