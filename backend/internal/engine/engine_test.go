@@ -207,3 +207,32 @@ func TestSleepWithNothingChosenLeavesUpdatesRunning(t *testing.T) {
 		t.Fatal("Wake should resume updates and redraw")
 	}
 }
+
+func TestEndedSession(t *testing.T) {
+	at := time.Unix(10_000, 0)
+	installed := func(id int) (steam.Game, bool) {
+		return steam.Game{AppID: id, Name: "Installed", LastPlayed: time.Unix(5_000, 0)}, id != 999
+	}
+	check := func(name string, g *steam.Game, stopped int, wantID int, wantRunning bool) *steam.Game {
+		t.Helper()
+		got := endedSession(g, stopped, at, installed)
+		if got == nil || got.AppID != wantID || got.Running != wantRunning {
+			t.Errorf("%s: got %+v, want app %d running=%v", name, got, wantID, wantRunning)
+		}
+		return got
+	}
+
+	lingering := &steam.Game{AppID: 1, Running: true, Started: at.Add(-time.Hour)}
+	if g := check("processes still exiting", lingering, 1, 1, false); g != nil && !g.LastPlayed.Equal(at) {
+		t.Errorf("last played should be the exit time: %v", g.LastPlayed)
+	}
+	check("new session after the exit", &steam.Game{AppID: 1, Running: true, Started: at.Add(time.Minute)}, 1, 1, true)
+	check("another game running", &steam.Game{AppID: 2, Running: true}, 1, 2, true)
+	check("files not yet updated", &steam.Game{AppID: 2, LastPlayed: at.Add(-time.Hour)}, 1, 1, false)
+	check("files know a later session", &steam.Game{AppID: 2, LastPlayed: at.Add(time.Hour)}, 1, 2, false)
+	check("no game in the files yet", nil, 1, 1, false)
+	check("non-Steam shortcut", &steam.Game{AppID: 2}, 999, 2, false)
+	if endedSession(nil, 0, at, installed) != nil || endedSession(lingering, 0, at, installed) != lingering {
+		t.Error("without an exit report, g must be unchanged")
+	}
+}

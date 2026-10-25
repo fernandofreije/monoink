@@ -614,9 +614,31 @@ function Content() {
   );
 }
 
-export default definePlugin(() => ({
-  name: "E-Ink Faceplate",
-  titleView: <div className={staticClasses.Title}>E-Ink Faceplate</div>,
-  content: <Content />,
-  icon: <MdTabletAndroid />,
-}));
+// Steam knows when a game starts or stops, and when it's about to
+// suspend, before the service can tell from the system. Pass it on.
+function relaySteamEvents(): () => void {
+  const ignore = () => {}; // the service may not be running yet
+  const subs = [
+    SteamClient.GameSessions.RegisterForAppLifetimeNotifications((n) => {
+      api.steamGame(n.unAppID, n.bRunning).catch(ignore);
+    }),
+    SteamClient.System.RegisterForOnSuspendRequest(() => {
+      api.steamPower("suspend").catch(ignore);
+    }),
+    SteamClient.System.RegisterForOnResumeFromSuspend(() => {
+      api.steamPower("resume").catch(ignore);
+    }),
+  ];
+  return () => subs.forEach((s) => s.unregister());
+}
+
+export default definePlugin(() => {
+  const unregister = relaySteamEvents();
+  return {
+    name: "E-Ink Faceplate",
+    titleView: <div className={staticClasses.Title}>E-Ink Faceplate</div>,
+    content: <Content />,
+    icon: <MdTabletAndroid />,
+    onDismount: unregister,
+  };
+});

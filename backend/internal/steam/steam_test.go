@@ -63,6 +63,13 @@ func TestCurrentGame(t *testing.T) {
 		t.Errorf("hashed layout: got %q, want the portrait capsule", got)
 	}
 
+	if g, ok := c.App(100); !ok || g.Name != "Old Game" || g.Running || g.LastPlayed.Unix() != 1000 {
+		t.Errorf("App(100): %+v, %v", g, ok)
+	}
+	if _, ok := c.App(300); ok {
+		t.Error("App should refuse apps without a manifest")
+	}
+
 	write(t, filepath.Join(proc, "4242", "cmdline"), "reaper\x00SteamLaunch\x00AppId=100\x00--\x00game.exe\x00")
 	g, ok = c.Current()
 	if !ok || g.AppID != 100 || !g.Running || g.Name != "Old Game" {
