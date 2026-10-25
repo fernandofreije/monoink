@@ -20,6 +20,7 @@ import { MdTabletAndroid } from "react-icons/md";
 
 import * as api from "./api";
 import type { Candidate, Place, Provider, Settings, SleepScreen, Status } from "./api";
+import { relaySteamEvents } from "./steamEvents";
 
 const ROTATE_STEPS = [1, 2, 5, 10, 15, 30, 60];
 const PHOTO_STEPS = [1, 5, 10, 15, 30, 60];
@@ -614,26 +615,13 @@ function Content() {
   );
 }
 
-// Steam knows when a game starts or stops, and when it's about to
-// suspend, before the service can tell from the system. Pass it on.
-function relaySteamEvents(): () => void {
-  const ignore = () => {}; // the service may not be running yet
-  const subs = [
-    SteamClient.GameSessions.RegisterForAppLifetimeNotifications((n) => {
-      api.steamGame(n.unAppID, n.bRunning).catch(ignore);
-    }),
-    SteamClient.System.RegisterForOnSuspendRequest(() => {
-      api.steamPower("suspend").catch(ignore);
-    }),
-    SteamClient.System.RegisterForOnResumeFromSuspend(() => {
-      api.steamPower("resume").catch(ignore);
-    }),
-  ];
-  return () => subs.forEach((s) => s.unregister());
-}
-
 export default definePlugin(() => {
-  const unregister = relaySteamEvents();
+  const ignore = () => {}; // the service may not be running yet
+  const unregister = relaySteamEvents(SteamClient, {
+    game: (appId, running) => api.steamGame(appId, running).catch(ignore),
+    suspend: () => api.steamPower("suspend").catch(ignore),
+    resume: () => api.steamPower("resume").catch(ignore),
+  });
   return {
     name: "E-Ink Faceplate",
     titleView: <div className={staticClasses.Title}>E-Ink Faceplate</div>,
