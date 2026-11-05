@@ -89,13 +89,24 @@ CI runs on every pull request, including ones from forks (without access to
 secrets), and attaches the built zip so the change can be tried on a device
 before merging.
 
+## Commits and merging
+
+- Commit messages and pull request titles follow
+  [Conventional Commits](https://www.conventionalcommits.org/):
+  `type(scope): subject`, e.g. `fix(engine): redraw when a game exits`.
+  Types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, `chore`.
+- `main` has a linear history: no merge commits. Rebase branches onto
+  `origin/main` (never merge `main` into them) and merge pull requests with
+  **Rebase and merge** or **Squash and merge**.
+
 ## Releasing
 
-1. In a `release/vX.Y.Z` pull request, update `"version"` in `package.json`
-   and add `docs/release-notes/vX.Y.Z.md` with the highlights (it becomes the
-   top of the GitHub release, above the automatic list of merged pull
-   requests). Merge it.
-2. Tag the merged commit on `main` and push the tag:
+1. Pick the version from the commits since the last tag (`feat` → minor,
+   only `fix` → patch). On `main`, update `"version"` in `package.json` and
+   add `docs/release-notes/vX.Y.Z.md` with the highlights (it becomes the
+   top of the GitHub release, above the automatic list of changes). Commit
+   it as `chore(release): vX.Y.Z` and push `main`.
+2. Tag that commit and push the tag on its own:
 
    ```bash
    git tag v0.2.0
